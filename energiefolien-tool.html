@@ -93,13 +93,14 @@
         throw new Error(`Ungültige Regressionsdaten: x-Länge (${xVals.length}) stimmt nicht mit y-Länge (${yVals.length}) überein.`);
       }
       const n = xVals.length;
-      if (n < 2) return { m: null, b: null, yPred: [...yVals] };
+      if (n < 2) return { m: null, b: null, yPred: null };
       const sumX = xVals.reduce((a, b) => a + b, 0);
       const sumY = yVals.reduce((a, b) => a + b, 0);
       const sumXY = xVals.reduce((acc, x, i) => acc + x * yVals[i], 0);
       const sumXX = xVals.reduce((acc, x) => acc + x * x, 0);
       const denominator = (n * sumXX) - (sumX * sumX);
-      const m = denominator === 0 ? 0 : ((n * sumXY) - (sumX * sumY)) / denominator;
+      if (denominator === 0) return { m: null, b: null, yPred: null };
+      const m = ((n * sumXY) - (sumX * sumY)) / denominator;
       const b = (sumY - (m * sumX)) / n;
       return {
         m,
@@ -138,11 +139,14 @@
 
       const xVals = rows.map((_, i) => i + 1);
       const { yPred } = regression(xVals, total);
+      const regressionSeries = yPred
+        ? [{ name: 'Regression', values: xVals.map((x, i) => ({ x, y: yPred[i] })) }]
+        : [];
       const slide2 = pptx.addSlide();
       slide2.addText('Regressionsanalyse: Gesamtenergie', { x: 0.6, y: 0.3, w: 12.2, h: 0.5, fontSize: 20, bold: true });
       slide2.addChart(pptx.ChartType.scatter, [
         { name: 'Gesamtenergie', values: xVals.map((x, i) => ({ x, y: total[i] })) },
-        { name: 'Regression', values: xVals.map((x, i) => ({ x, y: yPred[i] })) }
+        ...regressionSeries
       ], {
         x: 0.6, y: 1.1, w: 12.2, h: 5.5,
         showLegend: true,
