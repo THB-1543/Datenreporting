@@ -2,7 +2,7 @@
 Datenanalyse für Energiethemen
 
 ## HTML-Tool für Energiefolien
-Die Datei `/home/runner/work/Datenreporting/Datenreporting/energiefolien-tool.html` bietet ein HTML-Tool, das:
+Die Datei `energiefolien-tool.html` bietet ein HTML-Tool, das:
 
 - Excel-Dateien (`.xlsx`/`.xls`) einliest
 - eine PPT mit Standard-Energiefolien erstellt

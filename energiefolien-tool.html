@@ -45,7 +45,7 @@
 
     const normalize = (v) => String(v || '')
       .normalize('NFD')
-      .replace(/[^\w\s-]|_/g, '')
+      .replace(/[^\w\s-]/g, '')
       .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
       .replace(/\s+/g, '');
@@ -53,7 +53,7 @@
     const parseNumber = (value) => {
       if (typeof value === 'number') return value;
       if (value == null || value === '') return 0;
-      const normalized = String(value).replace('.', '').replace(',', '.').replace(/[^0-9.-]/g, '');
+      const normalized = String(value).replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
       const num = Number(normalized);
       return Number.isFinite(num) ? num : 0;
     };
