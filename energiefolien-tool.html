@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Energie-PPT-Tool</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; max-width: 900px; }
+    h1 { margin-bottom: .5rem; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-top: 1rem; }
+    button { padding: .6rem 1rem; cursor: pointer; }
+    .hint { color: #555; font-size: .95rem; }
+    ul { margin-top: .5rem; }
+    .ok { color: #0a7a32; }
+    .error { color: #9b111e; }
+  </style>
+</head>
+<body>
+  <h1>Energiefolien aus Excel erstellen</h1>
+  <p class="hint">Dieses HTML-Tool liest eine Excel-Datei ein und erzeugt eine PPT mit Standard-Energiefolien.</p>
+
+  <div class="card">
+    <label for="excelFile"><strong>1) Excel-Datei auswählen</strong></label><br /><br />
+    <input id="excelFile" type="file" accept=".xlsx,.xls" />
+    <p class="hint">Erwartete Spalten (flexibel): Zeitraum, Bereich, Entwicklungszeit, Wartung, Grundlast, Gesamtenergie.</p>
+    <ul>
+      <li>Folie 1: Energiedarstellung über Entwicklungszeit, Wartung, Grundlast</li>
+      <li>Folie 2: Regressionsanalyse über Gesamtenergie</li>
+      <li>Folie 3: Trenddiagramm aller Energien über gesamte Bereiche</li>
+    </ul>
+    <button id="createPpt">2) PPT erstellen</button>
+    <p id="status"></p>
+  </div>
+
+  <script src="./vendor/xlsx.full.min.js"></script>
+  <script src="./vendor/pptxgen.bundle.js"></script>
+  <script>
+    const statusEl = document.getElementById('status');
+    const fileInput = document.getElementById('excelFile');
+
+    const setStatus = (text, kind = 'ok') => {
+      statusEl.textContent = text;
+      statusEl.className = kind;
+    };
+
+    const normalize = (v) => String(v || '')
+      .normalize('NFD')
+      .replace(/[^\w\s-]/g, '')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/\s+/g, '');
+
+    const parseNumber = (value) => {
+      if (typeof value === 'number') return value;
+      if (value == null || value === '') return 0;
+      let normalized = String(value).trim().replace(/\s+/g, '');
+      const hasDot = normalized.includes('.');
+      const hasComma = normalized.includes(',');
+      if (hasDot && hasComma) {
+        normalized = normalized.lastIndexOf(',') > normalized.lastIndexOf('.')
+          ? normalized.replace(/\./g, '').replace(',', '.')
+          : normalized.replace(/,/g, '');
+      } else if (hasComma) {
+        normalized = normalized.replace(',', '.');
+      }
+      normalized = normalized.replace(/[^0-9.-]/g, '');
+      const num = Number(normalized);
+      return Number.isFinite(num) ? num : 0;
+    };
+
+    const totalEnergyForRow = (row) => row.totalEnergy ?? (row.development + row.maintenance + row.baseLoad);
+
+    const getByAliases = (row, aliases) => {
+      const entries = Object.entries(row);
+      for (const [k, v] of entries) {
+        const nk = normalize(k);
+        if (aliases.includes(nk)) return v;
+      }
+      return undefined;
+    };
+
+    const buildRows = (sheetData) => sheetData.map((row, i) => ({
+      label: getByAliases(row, ['zeitraum', 'datum', 'monat', 'periode', 'period']) || `Datensatz ${i + 1}`,
+      area: getByAliases(row, ['bereich', 'abteilung', 'segment', 'area']) || 'Unbekannt',
+      development: parseNumber(getByAliases(row, ['entwicklungszeit', 'entwicklung', 'development', 'dev'])),
+      maintenance: parseNumber(getByAliases(row, ['wartung', 'maintenance'])),
+      baseLoad: parseNumber(getByAliases(row, ['grundlast', 'base', 'baseload'])),
+      totalEnergy: parseNumber(getByAliases(row, ['gesamtenergie', 'gesamtenergiekwh', 'gesamt', 'totalenergy', 'energiegesamt']))
+    }));
+
+    const regression = (xVals, yVals) => {
+      if (xVals.length !== yVals.length) return { m: null, b: null, yPred: null };
+      const n = xVals.length;
+      if (n < 2) return { m: null, b: null, yPred: null };
+      const sumX = xVals.reduce((a, b) => a + b, 0);
+      const sumY = yVals.reduce((a, b) => a + b, 0);
+      const sumXY = xVals.reduce((acc, x, i) => acc + x * yVals[i], 0);
+      const sumXX = xVals.reduce((acc, x) => acc + x * x, 0);
+      const denominator = (n * sumXX) - (sumX * sumX);
+      if (denominator === 0) return { m: null, b: null, yPred: null };
+      const m = ((n * sumXY) - (sumX * sumY)) / denominator;
+      const b = (sumY - (m * sumX)) / n;
+      return {
+        m,
+        b,
+        yPred: xVals.map((x) => (m * x) + b)
+      };
+    };
+
+    const createPpt = (rows) => {
+      const pptx = new PptxGenJS();
+      pptx.layout = 'LAYOUT_WIDE';
+      pptx.author = 'Datenreporting';
+      pptx.subject = 'Energiefolien';
+      pptx.title = 'Energieauswertung';
+
+      const labels = rows.map((r) => String(r.label));
+      const development = rows.map((r) => r.development);
+      const maintenance = rows.map((r) => r.maintenance);
+      const baseLoad = rows.map((r) => r.baseLoad);
+      const total = rows.map((r) => totalEnergyForRow(r));
+
+      const slide1 = pptx.addSlide();
+      slide1.addText('Energiedarstellung: Entwicklungszeit, Wartung, Grundlast', { x: 0.6, y: 0.3, w: 12.2, h: 0.5, fontSize: 20, bold: true });
+      slide1.addChart(pptx.ChartType.bar, [
+        { name: 'Entwicklungszeit', labels, values: development },
+        { name: 'Wartung', labels, values: maintenance },
+        { name: 'Grundlast', labels, values: baseLoad }
+      ], {
+        x: 0.6, y: 1.1, w: 12.2, h: 5.5,
+        barDir: 'col',
+        barGrouping: 'stacked',
+        catAxisLabelRotate: -45,
+        showLegend: true,
+        showValue: false
+      });
+
+      const xVals = rows.map((_, i) => i + 1);
+      const { yPred } = regression(xVals, total);
+      const regressionSeries = yPred
+        ? [{ name: 'Regression', values: xVals.map((x, i) => ({ x, y: yPred[i] })) }]
+        : [];
+      const slide2 = pptx.addSlide();
+      slide2.addText('Regressionsanalyse: Gesamtenergie', { x: 0.6, y: 0.3, w: 12.2, h: 0.5, fontSize: 20, bold: true });
+      slide2.addChart(pptx.ChartType.scatter, [
+        { name: 'Gesamtenergie', values: xVals.map((x, i) => ({ x, y: total[i] })) },
+        ...regressionSeries
+      ], {
+        x: 0.6, y: 1.1, w: 12.2, h: 5.5,
+        showLegend: true,
+        valAxisTitle: 'Energie',
+        catAxisTitle: 'Messpunkt'
+      });
+
+      const groupedByArea = rows.reduce((acc, row) => {
+        const key = String(row.area);
+        if (!acc[key]) acc[key] = { development: 0, maintenance: 0, baseLoad: 0, total: 0 };
+        acc[key].development += row.development;
+        acc[key].maintenance += row.maintenance;
+        acc[key].baseLoad += row.baseLoad;
+        acc[key].total += totalEnergyForRow(row);
+        return acc;
+      }, {});
+
+      const areaLabels = Object.keys(groupedByArea);
+      const areaDev = areaLabels.map((a) => groupedByArea[a].development);
+      const areaMaint = areaLabels.map((a) => groupedByArea[a].maintenance);
+      const areaBase = areaLabels.map((a) => groupedByArea[a].baseLoad);
+      const areaTotal = areaLabels.map((a) => groupedByArea[a].total);
+
+      const slide3 = pptx.addSlide();
+      slide3.addText('Trenddiagramm: Alle Energien über Bereiche', { x: 0.6, y: 0.3, w: 12.2, h: 0.5, fontSize: 20, bold: true });
+      slide3.addChart(pptx.ChartType.line, [
+        { name: 'Entwicklungszeit', labels: areaLabels, values: areaDev },
+        { name: 'Wartung', labels: areaLabels, values: areaMaint },
+        { name: 'Grundlast', labels: areaLabels, values: areaBase },
+        { name: 'Gesamtenergie', labels: areaLabels, values: areaTotal }
+      ], {
+        x: 0.6, y: 1.1, w: 12.2, h: 5.5,
+        showLegend: true,
+        catAxisLabelRotate: -25,
+        showValue: false
+      });
+
+      return pptx.writeFile({ fileName: 'Energiefolien.pptx' });
+    };
+
+    document.getElementById('createPpt').addEventListener('click', async () => {
+      try {
+        const file = fileInput.files?.[0];
+        if (!file) {
+          setStatus('Bitte zuerst eine Excel-Datei auswählen.', 'error');
+          return;
+        }
+
+        setStatus('Excel-Datei wird eingelesen...');
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const sheetData = XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
+        if (!sheetData.length) {
+          setStatus('Die Excel-Datei enthält keine Datensätze.', 'error');
+          return;
+        }
+
+        const rows = buildRows(sheetData);
+        await createPpt(rows);
+        setStatus('PPT erfolgreich erstellt: Energiefolien.pptx');
+      } catch (err) {
+        setStatus(`Fehler bei der Erstellung: ${err.message}`, 'error');
+      }
+    });
+  </script>
+</body>
+</html>
