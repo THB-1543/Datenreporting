@@ -32,8 +32,8 @@
     <p id="status"></p>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js" integrity="sha384-Cck14aA9cifjYolcnjebXRfWGkz5ltHMBiG4px/j8GS+xQcb7OhNQWZYyWjQ+UwQ" crossorigin="anonymous"></script>
   <script>
     const statusEl = document.getElementById('status');
     const fileInput = document.getElementById('excelFile');
@@ -53,10 +53,22 @@
     const parseNumber = (value) => {
       if (typeof value === 'number') return value;
       if (value == null || value === '') return 0;
-      const normalized = String(value).replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
+      let normalized = String(value).trim().replace(/\s+/g, '');
+      const hasDot = normalized.includes('.');
+      const hasComma = normalized.includes(',');
+      if (hasDot && hasComma) {
+        normalized = normalized.lastIndexOf(',') > normalized.lastIndexOf('.')
+          ? normalized.replace(/\./g, '').replace(',', '.')
+          : normalized.replace(/,/g, '');
+      } else if (hasComma) {
+        normalized = normalized.replace(',', '.');
+      }
+      normalized = normalized.replace(/[^0-9.-]/g, '');
       const num = Number(normalized);
       return Number.isFinite(num) ? num : 0;
     };
+
+    const totalEnergyForRow = (row) => row.totalEnergy || (row.development + row.maintenance + row.baseLoad);
 
     const getByAliases = (row, aliases) => {
       const entries = Object.entries(row);
@@ -77,6 +89,9 @@
     }));
 
     const regression = (xVals, yVals) => {
+      if (xVals.length !== yVals.length) {
+        throw new Error('Ungültige Regressionsdaten: x/y-Länge stimmt nicht überein.');
+      }
       const n = xVals.length;
       if (n < 2) return { m: 0, b: 0, yPred: [...yVals] };
       const sumX = xVals.reduce((a, b) => a + b, 0);
@@ -104,7 +119,7 @@
       const development = rows.map((r) => r.development);
       const maintenance = rows.map((r) => r.maintenance);
       const baseLoad = rows.map((r) => r.baseLoad);
-      const total = rows.map((r) => r.totalEnergy || (r.development + r.maintenance + r.baseLoad));
+      const total = rows.map((r) => totalEnergyForRow(r));
 
       const slide1 = pptx.addSlide();
       slide1.addText('Energiedarstellung: Entwicklungszeit, Wartung, Grundlast', { x: 0.6, y: 0.3, w: 12.2, h: 0.5, fontSize: 20, bold: true });
@@ -141,7 +156,7 @@
         acc[key].development += row.development;
         acc[key].maintenance += row.maintenance;
         acc[key].baseLoad += row.baseLoad;
-        acc[key].total += row.totalEnergy || (row.development + row.maintenance + row.baseLoad);
+        acc[key].total += totalEnergyForRow(row);
         return acc;
       }, {});
 
