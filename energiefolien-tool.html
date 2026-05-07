@@ -68,7 +68,7 @@
       return Number.isFinite(num) ? num : 0;
     };
 
-    const totalEnergyForRow = (row) => row.totalEnergy || (row.development + row.maintenance + row.baseLoad);
+    const totalEnergyForRow = (row) => row.totalEnergy ?? (row.development + row.maintenance + row.baseLoad);
 
     const getByAliases = (row, aliases) => {
       const entries = Object.entries(row);
@@ -90,10 +90,10 @@
 
     const regression = (xVals, yVals) => {
       if (xVals.length !== yVals.length) {
-        throw new Error('Ungültige Regressionsdaten: x/y-Länge stimmt nicht überein.');
+        throw new Error(`Ungültige Regressionsdaten: x-Länge (${xVals.length}) stimmt nicht mit y-Länge (${yVals.length}) überein.`);
       }
       const n = xVals.length;
-      if (n < 2) return { m: 0, b: 0, yPred: [...yVals] };
+      if (n < 2) return { m: null, b: null, yPred: [...yVals] };
       const sumX = xVals.reduce((a, b) => a + b, 0);
       const sumY = yVals.reduce((a, b) => a + b, 0);
       const sumXY = xVals.reduce((acc, x, i) => acc + x * yVals[i], 0);
